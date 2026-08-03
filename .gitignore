@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment & secrets — never commit
+.env
+.env.local
+.env.*.local
+secrets/
+config/credentials/
+*.pem
+*.key
+
+# Runtime data
+logs/
+*.log
+uploads/
+backups/
+.cache/
+temp/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# Generated schema profiles (regenerate with scripts/profile-sheets.ts)
+docs/_generated/
+
+.vercel
+.env*
+
+# Project development journal.
+#
+# Deliberately not published. It records the edit key, an inventory of the
+# application's current security gaps, and infrastructure notes — a map of
+# exactly where to attack this deployment. It stays on the developer machine
+# until the repository is private AND the read API is authenticated.
+CLAUDE.md

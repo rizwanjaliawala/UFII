@@ -1,0 +1,27 @@
+{
+  "//": [
+    "Root tsconfig — exists for the Vercel function build only.",
+    "",
+    "`api/index.ts` sits outside every workspace, so Vercel's Node builder has",
+    "no package tsconfig to inherit and falls back to defaults. The default",
+    "includes full .d.ts checking, and `googleapis` ships type definitions",
+    "large enough to exhaust the build container's heap — the function build",
+    "dies with 'Reached heap limit' while the app itself is perfectly fine.",
+    "",
+    "`skipLibCheck` is the fix. The workspaces keep their own tsconfigs and are",
+    "unaffected; each is built with an explicit -p."
+  ],
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noEmit": true
+  },
+  "include": ["api/**/*.ts"]
+}

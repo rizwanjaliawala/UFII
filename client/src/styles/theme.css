@@ -1,0 +1,328 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Utopia TMS — Warm Glass Design System
+
+   Palette and glassmorphic direction supplied by the client
+   (2026-07-26), superseding the emerald/flat direction originally
+   in docs/02. That document has been updated to match.
+
+   Components reference these tokens, never raw hex, so the palette
+   stays enforceable and a retune is a one-file change.
+   ============================================================ */
+
+@theme {
+  /* ---- Client palette ---- */
+  --color-background: #f8f5f0; /* Soft Cream */
+  --color-surface: #fffcf8; /* Warm White — cards */
+  --color-text-primary: #2f2f2f; /* Charcoal */
+  --color-text-secondary: #6b6b6b; /* Slate Gray */
+  --color-primary: #6f7d4e; /* Olive Green — primary accent */
+  --color-accent: #c97c5d; /* Terracotta — secondary accent */
+  --color-border: #e8e1d7; /* Light Beige */
+
+  /* ---- Derived from the palette ----
+     The supplied set has no interaction or status colours, so these are
+     derived to stay in the same warm family. Olive/terracotta are reserved
+     as brand accents; status colours are deliberately distinct from them so
+     "olive" never has to mean both "primary button" and "on time". */
+  --color-primary-hover: #5d6a41;
+  --color-primary-active: #4c5735;
+  --color-primary-wash: #eef0e6; /* tinted fill, selected rows */
+  --color-accent-hover: #b86a4c;
+  --color-accent-wash: #f7ebe4;
+
+  --color-text-disabled: #a09a92;
+  --color-border-strong: #d6ccbe;
+  --color-surface-sunk: #f2ece4; /* recessed wells, table heads */
+
+  --color-success: #5b8c51;
+  --color-success-wash: #e9f0e6;
+  --color-warning: #c9954d;
+  --color-warning-wash: #faf1e2;
+  --color-danger: #b24a3a; /* hotter and darker than terracotta */
+  --color-danger-wash: #f8e8e4;
+  --color-info: #5a7184;
+  --color-info-wash: #e9eef2;
+
+  /* ---- Glass system ----
+     Two tiers. `glass` is the default for chrome and cards. `glass-solid`
+     is for data-dense surfaces — tables, drawers, review queues — where
+     legibility beats translucency. Enterprise data must stay readable. */
+  --glass-bg: rgba(255, 252, 248, 0.72);
+  --glass-bg-solid: rgba(255, 252, 248, 0.94);
+  --glass-bg-raised: rgba(255, 252, 248, 0.85);
+  --glass-border: rgba(232, 225, 215, 0.85);
+  --glass-blur: 18px;
+  --glass-blur-light: 10px;
+
+  /* Cream scrim over the photograph.
+     Tuned so the truck stays clearly visible — the glass panels carry
+     legibility, not the scrim. Raising these hides the photograph; lowering
+     them starts to strain text that sits directly on the background. */
+  --scrim: rgba(248, 245, 240, 0.42);
+  --scrim-strong: rgba(248, 245, 240, 0.62);
+
+  /* ---- Typography ---- */
+  --font-sans: Inter, Geist, Arial, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+
+  --text-page-title: 2rem;
+  --text-section-title: 1.5rem;
+  --text-card-title: 1.125rem;
+  --text-body: 0.875rem;
+  --text-body-lg: 1rem;
+  --text-caption: 0.75rem;
+
+  /* ---- Layout ---- */
+  --spacing-content: 1.5rem;
+  --spacing-card: 1.25rem;
+  --spacing-grid: 1.25rem;
+  --max-width-app: 1600px;
+
+  --radius-sm: 0.5rem;
+  --radius: 0.875rem;
+  --radius-lg: 1rem;
+
+  --sidebar-width: 280px;
+  --sidebar-width-collapsed: 80px;
+  --header-height: 64px;
+
+  /* ---- Shadows — warm-tinted, not neutral grey ---- */
+  --shadow-card: 0 1px 2px rgba(47, 47, 47, 0.04), 0 2px 8px rgba(47, 47, 47, 0.04);
+  --shadow-elevated: 0 4px 16px rgba(47, 47, 47, 0.08);
+  --shadow-drawer: -8px 0 40px rgba(47, 47, 47, 0.14);
+
+  /* ---- Motion ---- */
+  --duration-fast: 120ms;
+  --duration: 200ms;
+  --duration-slow: 300ms;
+  --ease-enterprise: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  /* The photograph is fixed on the root element and never scrolls or
+     repaints — the scrim sits above it, and all app chrome above that. */
+  body {
+    background-color: var(--color-background);
+    background-image: url("/truck-bg.jpg");
+    background-size: cover;
+    background-position: center 35%;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* Scrim layer. Kept as a pseudo-element so it costs one composited layer
+     rather than a wrapper div in every tree. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(
+      160deg,
+      var(--scrim) 0%,
+      var(--scrim-strong) 45%,
+      var(--scrim-strong) 100%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Identifiers — container, booking, chassis, PU, invoice numbers.
+     Fixed width so digits align down a column and are easy to verify. */
+  .data {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  h1 {
+    font-size: var(--text-page-title);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  h2 {
+    font-size: var(--text-section-title);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  h3 {
+    font-size: var(--text-card-title);
+    font-weight: 600;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"],
+  progress {
+    accent-color: var(--color-primary);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-disabled);
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  /* ---- Glass surfaces ----
+     backdrop-filter is expensive, so it is applied to a small number of
+     large containers (chrome, cards, drawers) and never per table row. */
+  .glass {
+    background-color: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+    border: 1px solid var(--glass-border);
+  }
+
+  .glass-raised {
+    background-color: var(--glass-bg-raised);
+    backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+    border: 1px solid var(--glass-border);
+  }
+
+  /* For dense data. Nearly opaque by design — a table of container numbers
+     read through a blur is a support ticket waiting to happen. */
+  .glass-solid {
+    background-color: var(--glass-bg-solid);
+    backdrop-filter: blur(var(--glass-blur-light));
+    -webkit-backdrop-filter: blur(var(--glass-blur-light));
+    border: 1px solid var(--glass-border);
+  }
+
+  .card {
+    background-color: var(--glass-bg-raised);
+    backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+  }
+
+  .card-interactive {
+    transition:
+      box-shadow var(--duration) var(--ease-enterprise),
+      border-color var(--duration) var(--ease-enterprise),
+      background-color var(--duration) var(--ease-enterprise);
+  }
+  .card-interactive:hover {
+    background-color: var(--glass-bg-solid);
+    box-shadow: var(--shadow-elevated);
+    border-color: var(--color-border-strong);
+  }
+
+  /* Subtle top highlight — the edge that makes glass read as glass */
+  .glass-edge {
+    position: relative;
+  }
+  .glass-edge::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.7),
+      transparent
+    );
+    pointer-events: none;
+  }
+
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--color-surface-sunk) 25%,
+      var(--color-surface) 50%,
+      var(--color-surface-sunk) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+}
+
+@layer utilities {
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}
+
+/* Browsers without backdrop-filter fall back to near-opaque surfaces so
+   nothing becomes unreadable. */
+@supports not (backdrop-filter: blur(1px)) {
+  .glass,
+  .glass-raised,
+  .glass-solid,
+  .card {
+    background-color: rgba(255, 252, 248, 0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
