@@ -1,14 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install && npm -w shared run build",
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "client/dist",
-  "//installCommand": [
-    "Shared is built during install, not build, so its dist/ exists before",
-    "BOTH the client build and the serverless function bundling — the",
-    "function resolves @tms/shared through node_modules and must find",
-    "compiled JS there, whatever order Vercel runs its steps in."
-  ],
-  "installCommand": "npm install && npm -w shared run build",
   "framework": null,
   "functions": {
     "api/index.ts": {
