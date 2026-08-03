@@ -14,7 +14,7 @@
   "workspaces": ["shared", "server", "client"],
   "scripts": {
     "install:all": "npm install",
-    "dev": "concurrently -n api,web -c green,cyan \"npm -w server run dev\" \"npm -w client run dev\"",
+    "dev": "npm -w shared run build && concurrently -n api,web -c green,cyan \"npm -w server run dev\" \"npm -w client run dev\"",
     "build": "npm -w shared run build && npm -w server run build && npm -w client run build",
     "build:vercel": "npm -w shared run build && npm -w client run build",
     "migrate": "npm -w server run migrate",

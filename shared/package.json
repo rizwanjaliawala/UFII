@@ -3,10 +3,25 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "//entry": [
+    "Points at compiled JS, not src/index.ts.",
+    "",
+    "Raw TypeScript as a package entry works locally because tsx and Vite",
+    "compile on the fly. Node cannot. On Vercel the deployed server resolved",
+    "@tms/shared to src/index.ts and every request died with",
+    "ERR_MODULE_NOT_FOUND — a failure impossible to reproduce in dev.",
+    "",
+    "Consumers must therefore build shared first; the root `dev`, `build` and",
+    "vercel `installCommand` all do. Typechecking is unaffected: server and",
+    "client tsconfigs map @tms/shared to ../shared/src via `paths`."
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
