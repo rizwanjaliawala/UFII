@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "description": "Utopia Fulfillment Inc — Transportation Management System",
+  "//type": [
+    "Required for the Vercel function. `api/index.ts` sits at the repo root,",
+    "outside every workspace, so its module format is decided by THIS file.",
+    "Without it Vercel compiles the function to CommonJS while server/ stays",
+    "ESM, and the deployed API dies on every request with ERR_REQUIRE_ESM —",
+    "a 500 that the local dev server, which is ESM throughout, never shows."
+  ],
+  "type": "module",
   "workspaces": ["shared", "server", "client"],
   "scripts": {
     "install:all": "npm install",
