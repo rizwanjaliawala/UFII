@@ -1,0 +1,12 @@
+{
+  "apiBaseUrl": "https://utopia-tms.vercel.app",
+  "pairingCode": "",
+  "mailbox": "trucking@utopiafulfillment.com",
+  "protectionBypass": "",
+  "folders": ["Inbox"],
+  "pollSeconds": 30,
+  "batchSize": 50,
+  "lookbackDays": 7,
+  "maxBodyChars": 20000,
+  "subjectMustMatch": ""
+}

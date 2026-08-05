@@ -20,3 +20,4 @@ export * from "./normalize.js";
 export * from "./vendorName.js";
 export * from "./lfd.js";
 export * from "./format.js";
+export * from "./emailParse.js";

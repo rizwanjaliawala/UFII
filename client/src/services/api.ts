@@ -123,8 +123,23 @@ export const api = {
 
   getSummary: (): Promise<ContainerSummary> => request("/containers/summary"),
 
-  refreshContainers: (): Promise<{ ok: boolean; containers: number; ms: number }> =>
+  refreshContainers: (): Promise<RefreshResult> =>
     request("/containers/refresh", { method: "POST" }),
+
+  /**
+   * Pull newer data from the source sheets into Neon.
+   *
+   * A write, so it needs the edit key. Takes 16–35s — the caller must show
+   * progress rather than appearing to hang.
+   */
+  runIngest: (editKey: string, trigger = "Manual refresh"): Promise<IngestRunResult> =>
+    request("/sync/ingest", {
+      method: "POST",
+      headers: { "x-edit-key": editKey },
+      body: JSON.stringify({ trigger }),
+    }),
+
+  getSyncRuns: (): Promise<{ runs: SyncRun[] }> => request("/sync/runs"),
 
   /**
    * Edit a container's user-owned fields.
@@ -175,12 +190,202 @@ export const api = {
   getVendorDetail: (key: string): Promise<VendorDetail> =>
     request(`/vendors/${encodeURIComponent(key)}`),
 
+  getContainerEmails: (containerNumber: string): Promise<ContainerEmails> =>
+    request(`/emails/container/${encodeURIComponent(containerNumber)}`),
+
+  getConversation: (conversationId: string): Promise<{ emails: EmailRow[] }> =>
+    request(`/emails/conversation/${encodeURIComponent(conversationId)}`),
+
+  getAgentDevices: (): Promise<AgentStatus> => request("/agent/devices"),
+
+  getEmailReview: (): Promise<EmailReviewQueue> => request("/emails/review"),
+
+  getActivity: (
+    params: { limit?: number; entityKey?: string } = {},
+  ): Promise<{ available: boolean; entries: ActivityEntry[] }> =>
+    request(`/activity${toQueryString(params as Record<string, unknown>)}`),
+
+  getAlertRules: (): Promise<{ rules: AlertRuleSetting[] }> => request("/alerts/rules"),
+
+  setAlertRuleEnabled: (
+    ruleId: string,
+    enabled: boolean,
+    editKey: string,
+  ): Promise<{ ok: boolean }> =>
+    request(`/alerts/rules/${encodeURIComponent(ruleId)}`, {
+      method: "POST",
+      headers: { "x-edit-key": editKey },
+      body: JSON.stringify({ enabled }),
+    }),
+
+  getEmailLog: (limit = 60): Promise<{ available: boolean; entries: EmailLogEntry[] }> =>
+    request(`/emails/log?limit=${limit}`),
+
+  reviewEmailLink: (
+    linkId: number,
+    decision: "approve" | "reject",
+    editKey: string,
+    reason?: string,
+  ): Promise<{ ok: boolean }> =>
+    request(`/emails/links/${linkId}/review`, {
+      method: "POST",
+      headers: { "x-edit-key": editKey },
+      body: JSON.stringify({ decision, reason }),
+    }),
+
+  linkEmailManually: (
+    emailId: number,
+    containerNumber: string,
+    editKey: string,
+    reason?: string,
+  ): Promise<{ ok: boolean }> =>
+    request("/emails/links", {
+      method: "POST",
+      headers: { "x-edit-key": editKey },
+      body: JSON.stringify({ emailId, containerNumber, reason }),
+    }),
+
   getDetention: (filters: DetentionFilters = {}): Promise<DetentionSummary> =>
     request(`/detention${toQueryString(filters)}`),
 
   detentionExportUrl: (filters: DetentionFilters = {}): string =>
     `/api/detention/export${toQueryString(filters)}`,
 };
+
+/* ---------------- Email intelligence ---------------- */
+
+export interface EmailRow {
+  id: number;
+  subject: string | null;
+  senderName: string | null;
+  senderAddress: string | null;
+  receivedAt: string;
+  category: string;
+  summary: string | null;
+  hasAttachments: boolean;
+  conversationId: string | null;
+  method: string | null;
+  confidence: number | null;
+  needsReview: boolean;
+}
+
+export interface ContainerEmails {
+  containerNumber: string;
+  available: boolean;
+  /** Why there is nothing to show — never render this as "no emails". */
+  reason?: string;
+  emails: EmailRow[];
+  lastEmailAt: string | null;
+  categories: { category: string; count: number }[];
+}
+
+export interface AgentDevice {
+  id: number;
+  deviceName: string;
+  operator: string;
+  mailbox: string | null;
+  enrolledAt: string | null;
+  lastSeenAt: string | null;
+  agentVersion: string | null;
+  emailsIngested: number;
+  revoked: boolean;
+  online: boolean;
+}
+
+export interface RefreshResult {
+  ok: boolean;
+  /** False on the Neon path — the database is the source; run a sync instead. */
+  refreshed: boolean;
+  source: "sheets" | "neon";
+  containers: number;
+  lastSyncedAt?: string | null;
+  requiresIngest?: boolean;
+  detail?: string;
+  ms: number;
+}
+
+export interface IngestRunResult {
+  ok: boolean;
+  runId?: number;
+  containersUpserted?: number;
+  /** New containers this sync had never seen. */
+  containersInserted?: number;
+  /** Already-held containers refreshed from the source. */
+  containersUpdated?: number;
+  /** Everything ever ingested, after the run. */
+  containersTotal?: number;
+  invoicesUpserted?: number;
+  rowsRead?: number;
+  issuesFound?: number;
+  ms?: number;
+  durationMs?: number;
+  error?: string;
+}
+
+export interface SyncRun {
+  id: string;
+  started_at: string;
+  finished_at: string | null;
+  trigger: string;
+  status: string;
+  rows_read: number;
+  containers_upserted: number;
+  invoices_upserted: number;
+  issues_found: number;
+  error: string | null;
+}
+
+export interface ActivityEntry {
+  at: string;
+  actor: string;
+  action: string;
+  label: string;
+  entityType: string;
+  entityKey: string;
+  field: string | null;
+  oldValue: string | null;
+  newValue: string | null;
+  reason: string | null;
+}
+
+export interface AlertRuleSetting {
+  ruleId: string;
+  label: string;
+  description: string;
+  severity: "critical" | "warning" | "info";
+  enabled: boolean;
+  measurable: boolean;
+  unmeasurableReason?: string;
+}
+
+export interface ReviewItem extends EmailRow {
+  linkId: number;
+  containerNumber: string;
+  /** False when the matcher read a checksum-valid number not in the fleet. */
+  containerExists: boolean;
+}
+
+export interface EmailReviewQueue {
+  available: boolean;
+  reason?: string;
+  lowConfidence: ReviewItem[];
+  unmatched: EmailRow[];
+  totals: { lowConfidence: number; unmatched: number };
+}
+
+export interface EmailLogEntry {
+  at: string;
+  outcome: string;
+  detail: string | null;
+  containersLinked: number;
+  device: string | null;
+}
+
+export interface AgentStatus {
+  available: boolean;
+  devices: AgentDevice[];
+  anyOnline: boolean;
+}
 
 /* ---------------- Detention & Demurrage ---------------- */
 
@@ -274,7 +479,16 @@ export interface GlobalSearchResult {
 
 export interface DashboardSummary {
   generatedAt: string;
-  source: { kind: "sheets" | "neon"; containers: number; loadedAt: string | null };
+  source: {
+    kind: "sheets" | "neon";
+    /** Every container ever ingested — the store is cumulative. */
+    containers: number;
+    loadedAt: string | null;
+    /** How many the source sheets held at the last sync. May be lower. */
+    sourceContainers: number | null;
+    lastSyncAt: string | null;
+    cumulative: true;
+  };
   kpis: {
     activeContainers: number;
     atPort: number;
@@ -396,6 +610,8 @@ export interface AlertSummary {
   groups: AlertGroup[];
   totals: { critical: number; warning: number; info: number; containers: number };
   unmeasurable: { label: string; reason: string; phase: string }[];
+  /** Rules an operator switched off — a quiet board must be explicable. */
+  disabledRules: string[];
   reminders: { available: boolean; reason: string; phase: string };
 }
 

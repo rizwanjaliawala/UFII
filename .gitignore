@@ -35,6 +35,11 @@ docs/_generated/
 .vercel
 .env*
 
+# The agent's live config. Install-Agent.ps1 writes the pairing code and the
+# Vercel protection-bypass secret into it, so committing it would publish
+# working credentials. The .example file is the one that belongs in git.
+agent/agent.config.json
+
 # Project development journal.
 #
 # Deliberately not published. It records the edit key, an inventory of the

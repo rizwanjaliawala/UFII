@@ -28,7 +28,23 @@ export interface AttentionItem {
 
 export interface DashboardSummary {
   generatedAt: string;
-  source: { kind: "sheets" | "neon"; containers: number; loadedAt: string | null };
+  source: {
+    kind: "sheets" | "neon";
+    /** Everything ever ingested. The database is a cumulative store. */
+    containers: number;
+    loadedAt: string | null;
+    /**
+     * How many containers the source sheets held at the last sync.
+     *
+     * Reported separately because the two legitimately differ: containers
+     * drop out of the monthly tabs over time and are deliberately kept here
+     * forever. Showing only the total would make the fleet look inflated;
+     * showing only the source count would look like history had been lost.
+     */
+    sourceContainers: number | null;
+    lastSyncAt: string | null;
+    cumulative: true;
+  };
   kpis: {
     activeContainers: number;
     atPort: number;
@@ -69,7 +85,10 @@ export async function getDashboardSummary(now = new Date()): Promise<DashboardSu
     repository.stats(),
   ]);
 
-  const lfdBoard = await getLfdBoard(repository.kind, now);
+  const [lfdBoard, lastSync] = await Promise.all([
+    getLfdBoard(repository.kind, now),
+    getLastSync(),
+  ]);
 
   const attention: AttentionItem[] = (
     [
@@ -153,6 +172,9 @@ export async function getDashboardSummary(now = new Date()): Promise<DashboardSu
       kind: repository.kind,
       containers: totals.total,
       loadedAt: stats?.loadedAt ?? null,
+      sourceContainers: lastSync?.sourceContainers ?? null,
+      lastSyncAt: lastSync?.at ?? null,
+      cumulative: true,
     },
     kpis: {
       activeContainers: totals.activeContainers,
@@ -194,6 +216,33 @@ export async function getDashboardSummary(now = new Date()): Promise<DashboardSu
       { module: "AI Insights", reason: "Agents are not yet implemented", phase: "Phase 4" },
     ],
   };
+}
+
+/**
+ * The most recent successful sync.
+ *
+ * `containers_upserted` is how many the SOURCE held — it is the count of rows
+ * the sheets offered, not the size of the store. Older runs predate the
+ * column split and report null rather than a number that would be wrong.
+ */
+async function getLastSync(): Promise<{ at: string; sourceContainers: number } | null> {
+  if (!config.database.configured) return null;
+
+  try {
+    const { rows } = await query<{ started_at: Date; containers_upserted: number }>(
+      `SELECT started_at, containers_upserted
+         FROM sync_runs
+        WHERE status = 'Success' AND containers_upserted > 0
+        ORDER BY started_at DESC
+        LIMIT 1`,
+    );
+    const row = rows[0];
+    return row
+      ? { at: row.started_at.toISOString(), sourceContainers: row.containers_upserted }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

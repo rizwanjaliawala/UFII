@@ -317,14 +317,51 @@ containersRouter.get("/:containerNumber/history", async (req, res, next) => {
   }
 });
 
-/** Force a re-read of the source sheets, bypassing the cache. */
+/**
+ * Drop cached source data.
+ *
+ * On the sheet path this forces a re-read and genuinely refreshes.
+ *
+ * On the Neon path it CANNOT: the database is the source, and new data only
+ * arrives via the ingest. The previous version called `getAll(true)` here,
+ * which pulled all 4,400 rows (~5.5s) and changed nothing — the UI still
+ * showed the old sync time, so the button looked broken because it was
+ * doing nothing. It now says so, and reports when the data actually came
+ * from, so the caller can offer a sync instead.
+ */
 containersRouter.post("/refresh", async (_req, res, next) => {
   try {
     const started = Date.now();
+    const repository = await getContainerRepository();
+
+    if (repository.kind === "sheets") {
+      invalidateCache();
+      const containers = await repository.getAll(true);
+      apiLogger.info({ containers: containers.length }, "manual source refresh");
+      return res.json({
+        ok: true,
+        refreshed: true,
+        source: "sheets",
+        containers: containers.length,
+        ms: Date.now() - started,
+      });
+    }
+
     invalidateCache();
-    const containers = await (await getContainerRepository()).getAll(true);
-    apiLogger.info({ containers: containers.length }, "manual source refresh");
-    res.json({ ok: true, containers: containers.length, ms: Date.now() - started });
+    const stats = await repository.stats();
+    res.json({
+      ok: true,
+      refreshed: false,
+      source: "neon",
+      containers: stats?.containers ?? 0,
+      lastSyncedAt: stats?.loadedAt ?? null,
+      // The caller needs to know that seeing newer data requires an ingest,
+      // not another refresh.
+      requiresIngest: true,
+      detail:
+        "The database is the source. Run a sync to pull newer data from the source sheets.",
+      ms: Date.now() - started,
+    });
   } catch (error) {
     next(error);
   }

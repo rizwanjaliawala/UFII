@@ -139,12 +139,37 @@ export function ContainerTable({
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.15, delay: Math.min(index * 0.008, 0.2) }}
                   tabIndex={0}
+                  data-row-index={index}
                   onClick={() => onSelect(container.containerNumber)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       onSelect(container.containerNumber);
+                      return;
                     }
+
+                    // Arrow keys walk the list without opening anything, so a
+                    // dispatcher can scan down the board and stop where they
+                    // mean to. Home/End jump the page.
+                    const move =
+                      event.key === "ArrowDown"
+                        ? index + 1
+                        : event.key === "ArrowUp"
+                          ? index - 1
+                          : event.key === "Home"
+                            ? 0
+                            : event.key === "End"
+                              ? rows.length - 1
+                              : null;
+
+                    if (move === null) return;
+                    event.preventDefault();
+
+                    const target = event.currentTarget.parentElement?.querySelector<HTMLElement>(
+                      `[data-row-index="${Math.max(0, Math.min(rows.length - 1, move))}"]`,
+                    );
+                    target?.focus();
+                    target?.scrollIntoView({ block: "nearest" });
                   }}
                   className={clsx(
                     "cursor-pointer transition-colors",

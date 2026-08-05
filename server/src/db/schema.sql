@@ -240,3 +240,169 @@ CREATE TABLE IF NOT EXISTS sync_runs (
   issues_found      INTEGER NOT NULL DEFAULT 0,
   error             TEXT
 );
+
+-- ============================================================
+-- Phase 3 — email intelligence
+--
+-- Email arrives from a Windows sync agent running in the operator's own
+-- session, never from this process: Outlook COM needs a desktop session and
+-- a serverless function has none. The agent reads the mailbox and POSTs here.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- agent_devices — one row per installed sync agent
+--
+-- Enrolment is a short-lived pairing code exchanged once for a long-lived
+-- device token. Only the SHA-256 of the token is stored, so a database leak
+-- does not yield a working credential, and revocation is per device.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS agent_devices (
+  id                BIGSERIAL PRIMARY KEY,
+  device_name       TEXT NOT NULL,
+  operator          TEXT NOT NULL,
+  mailbox           TEXT,
+  token_hash        TEXT UNIQUE,
+  pairing_code      TEXT UNIQUE,
+  pairing_expires_at TIMESTAMPTZ,
+  enrolled_at       TIMESTAMPTZ,
+  revoked_at        TIMESTAMPTZ,
+  last_seen_at      TIMESTAMPTZ,
+  agent_version     TEXT,
+  emails_ingested   INTEGER NOT NULL DEFAULT 0,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_devices_seen ON agent_devices (last_seen_at DESC);
+
+-- ------------------------------------------------------------
+-- emails
+--
+-- Deduped on internet_message_id, NOT the Outlook Entry ID. Entry IDs change
+-- when an item moves between folders or stores, so the "same" email would
+-- re-ingest under a new id forever. The Internet Message-Id is assigned by
+-- the sending server and is stable and globally unique — and it is NOT NULL
+-- here, because a nullable dedupe key is what caused the credit-note
+-- duplication (NULL never equals NULL in a UNIQUE constraint).
+--
+-- Bodies are stored truncated. Doc 09 restricts what is retained: the
+-- application needs identifiers and intent, not a second copy of a mailbox.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS emails (
+  id                  BIGSERIAL PRIMARY KEY,
+  internet_message_id TEXT NOT NULL UNIQUE,
+  conversation_id     TEXT,
+  entry_id            TEXT,
+  folder              TEXT,
+  subject             TEXT,
+  sender_name         TEXT,
+  sender_address      TEXT,
+  received_at         TIMESTAMPTZ NOT NULL,
+  body_preview        TEXT,
+  category            TEXT NOT NULL DEFAULT 'Unknown',
+  category_source     TEXT NOT NULL DEFAULT 'auto',
+  summary             TEXT,
+  has_attachments     BOOLEAN NOT NULL DEFAULT FALSE,
+  device_id           BIGINT REFERENCES agent_devices (id) ON DELETE SET NULL,
+  ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_emails_received     ON emails (received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_emails_conversation ON emails (conversation_id);
+CREATE INDEX IF NOT EXISTS idx_emails_category     ON emails (category);
+
+-- ------------------------------------------------------------
+-- email_container_links — which container an email is about
+--
+-- Separate from emails because one email legitimately concerns several
+-- containers, the same way one invoice spans several.
+--
+-- `method` records WHICH of doc 05's five priority rules matched, and
+-- `confidence` how strongly. A link below the review threshold is written
+-- with needs_review = TRUE rather than dropped: doc 05 says never guess, and
+-- an unreviewed guess silently attached to a container is a guess.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS email_container_links (
+  id                BIGSERIAL PRIMARY KEY,
+  email_id          BIGINT NOT NULL REFERENCES emails (id) ON DELETE CASCADE,
+  container_number  TEXT NOT NULL,
+  method            TEXT NOT NULL,
+  confidence        NUMERIC(4, 3) NOT NULL,
+  needs_review      BOOLEAN NOT NULL DEFAULT FALSE,
+  reviewed_by       TEXT,
+  reviewed_at       TIMESTAMPTZ,
+  rejected          BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (email_id, container_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_links_container ON email_container_links (container_number);
+CREATE INDEX IF NOT EXISTS idx_email_links_review    ON email_container_links (needs_review)
+  WHERE needs_review = TRUE;
+
+-- ------------------------------------------------------------
+-- email_attachments — Drive/Outlook references, not the bytes
+--
+-- Doc 01: "Store only Google Drive File IDs and metadata. Do not duplicate
+-- files." Nothing here holds file content.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS email_attachments (
+  id                BIGSERIAL PRIMARY KEY,
+  email_id          BIGINT NOT NULL REFERENCES emails (id) ON DELETE CASCADE,
+  file_name         TEXT NOT NULL,
+  content_type      TEXT,
+  size_bytes        BIGINT,
+  kind              TEXT NOT NULL DEFAULT 'Unknown',
+  drive_file_id     TEXT,
+  ocr_status        TEXT NOT NULL DEFAULT 'None',
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (email_id, file_name)
+);
+
+-- ------------------------------------------------------------
+-- email_processing_log — doc 05 §Duplicate Prevention
+--
+-- Records every message the agent offered, including the ones skipped as
+-- already seen. Without the skips there is no way to tell "the agent is
+-- working and there is nothing new" from "the agent has stopped".
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS email_processing_log (
+  id                  BIGSERIAL PRIMARY KEY,
+  internet_message_id TEXT,
+  device_id           BIGINT REFERENCES agent_devices (id) ON DELETE SET NULL,
+  outcome             TEXT NOT NULL,
+  detail              TEXT,
+  containers_linked   INTEGER NOT NULL DEFAULT 0,
+  at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_log_at ON email_processing_log (at DESC);
+
+-- ------------------------------------------------------------
+-- alert_rule_settings — operator overrides for the built-in rules
+--
+-- The rules themselves stay in code: each needs a SQL predicate and a Node
+-- predicate, and a user-defined predicate would be neither testable nor
+-- safe to run against the database. What IS configurable is whether a rule
+-- is active and the thresholds it reads, which is what operators actually
+-- asked for.
+--
+-- A rule with no row here uses its code default, so the table starts empty
+-- and the application behaves identically until somebody changes something.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS alert_rule_settings (
+  rule_id       TEXT PRIMARY KEY,
+  enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+  threshold     INTEGER,
+  updated_by    TEXT NOT NULL DEFAULT 'Operator',
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Cumulative-store accounting on sync_runs.
+--
+-- containers_upserted alone cannot answer "did the fleet grow": it counts
+-- rows touched by the source, which shrinks whenever a monthly tab rolls
+-- over. These record what actually changed, and the size of the historical
+-- store afterwards. Added separately so existing rows keep their meaning.
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS containers_inserted INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS containers_updated  INTEGER;
+ALTER TABLE sync_runs ADD COLUMN IF NOT EXISTS containers_total    INTEGER;

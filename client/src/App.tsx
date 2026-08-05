@@ -13,6 +13,7 @@ import {
   CostAnalysisPage,
   DashboardPage,
   DetentionPage,
+  EmailReviewPage,
   PuLfdPage,
   ReportsPage,
   SettingsPage,
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="vendors" element={<VendorsPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="alerts" element={<AlertsPage />} />
+          <Route path="email-review" element={<EmailReviewPage />} />
           <Route path="ai" element={<AiAssistantPage />} />
           <Route path="sync" element={<SynchronizationPage />} />
           <Route path="administration" element={<AdministrationPage />} />

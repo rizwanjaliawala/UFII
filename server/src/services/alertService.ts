@@ -54,6 +54,8 @@ export interface AlertSummary {
   totals: { critical: number; warning: number; info: number; containers: number };
   /** Rules that exist but whose input data does not — never reported as 0. */
   unmeasurable: { label: string; reason: string; phase: string }[];
+  /** Rules an operator switched off — stated, so a quiet board is explicable. */
+  disabledRules: string[];
   reminders: { available: boolean; reason: string; phase: string };
 }
 
@@ -243,13 +245,83 @@ export const ALERT_RULES: AlertRule[] = [
 /** Rules whose inputs exist today. The rest are reported, not evaluated. */
 const MEASURABLE_RULES = ALERT_RULES.filter((rule) => !rule.unmeasurable);
 
+/**
+ * Operator settings for the built-in rules (doc 03 §Alerts, rule config).
+ *
+ * Only enable/disable is stored. The predicates stay in code because each
+ * exists twice — once as SQL, once as Node — and a user-authored predicate
+ * would be neither testable nor safe to run against the database.
+ *
+ * A rule with no row uses its code default, so an empty table means the
+ * application behaves exactly as before anyone touched this.
+ */
+export interface RuleSetting {
+  ruleId: string;
+  label: string;
+  description: string;
+  severity: AlertSeverity;
+  enabled: boolean;
+  measurable: boolean;
+  unmeasurableReason?: string;
+}
+
+async function disabledRuleIds(): Promise<Set<string>> {
+  if (!config.database.configured) return new Set();
+  try {
+    const { rows } = await query<{ rule_id: string }>(
+      `SELECT rule_id FROM alert_rule_settings WHERE enabled = FALSE`,
+    );
+    return new Set(rows.map((r) => r.rule_id));
+  } catch {
+    // A missing settings table must not take alerting down — the code
+    // defaults are a safe answer.
+    return new Set();
+  }
+}
+
+export async function listRuleSettings(): Promise<RuleSetting[]> {
+  const disabled = await disabledRuleIds();
+  return ALERT_RULES.map((rule) => ({
+    ruleId: rule.id,
+    label: rule.label,
+    description: rule.description,
+    severity: rule.severity,
+    enabled: !disabled.has(rule.id),
+    measurable: !rule.unmeasurable,
+    unmeasurableReason: rule.unmeasurable?.reason,
+  }));
+}
+
+export async function setRuleEnabled(
+  ruleId: string,
+  enabled: boolean,
+  actor: string,
+): Promise<boolean> {
+  if (!ALERT_RULES.some((r) => r.id === ruleId)) return false;
+
+  await query(
+    `INSERT INTO alert_rule_settings (rule_id, enabled, updated_by, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (rule_id) DO UPDATE
+       SET enabled = $2, updated_by = $3, updated_at = NOW()`,
+    [ruleId, enabled, actor],
+  );
+  return true;
+}
+
 export async function getAlerts(now = new Date()): Promise<AlertSummary> {
   const repository = await getContainerRepository();
 
-  const groups =
+  const disabled = await disabledRuleIds();
+
+  const evaluated =
     repository.kind === "neon" && config.database.configured
       ? await fromSql(now)
       : fromContainers(await repository.getAll(), now);
+
+  // Filtered after evaluation rather than before, so turning a rule back on
+  // needs no re-query path and the two stores stay symmetric.
+  const groups = evaluated.filter((g) => !disabled.has(g.id));
 
   const totals = { critical: 0, warning: 0, info: 0, containers: 0 };
   for (const group of groups) {
@@ -269,6 +341,7 @@ export async function getAlerts(now = new Date()): Promise<AlertSummary> {
       reason: r.unmeasurable!.reason,
       phase: r.unmeasurable!.phase,
     })),
+    disabledRules: ALERT_RULES.filter((r) => disabled.has(r.id)).map((r) => r.label),
     reminders: {
       available: false,
       reason:

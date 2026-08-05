@@ -37,8 +37,16 @@ export function CommandPalette() {
       }
       if (event.key === "Escape") setOpen(false);
     };
+    // The header's search box dispatches this, so clicking it and pressing
+    // Ctrl+K reach the same palette without threading state through the shell.
+    const onRequest = () => setOpen(true);
+
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("tms:open-search", onRequest);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("tms:open-search", onRequest);
+    };
   }, []);
 
   useEffect(() => {

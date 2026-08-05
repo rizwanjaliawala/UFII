@@ -8,10 +8,11 @@ import {
   ChevronDown,
   Info,
   RefreshCw,
+  SlidersHorizontal,
 } from "lucide-react";
 import clsx from "clsx";
 import { formatContainerNumber, formatDateShort } from "@tms/shared";
-import { api, type AlertGroup, type AlertSummary } from "../services/api";
+import { api, type AlertGroup, type AlertRuleSetting, type AlertSummary } from "../services/api";
 
 /**
  * Alerts & Reminders (doc 03 §Alerts).
@@ -145,6 +146,8 @@ export function AlertsPage() {
         </motion.div>
       )}
 
+      <RuleConfiguration onChanged={load} />
+
       <motion.section variants={rise} className="card p-[var(--spacing-card)]">
         <h2 className="flex items-center gap-2 text-[0.9rem] font-semibold text-[var(--color-text-primary)]">
           <Bell size={15} className="text-[var(--color-text-secondary)]" aria-hidden />
@@ -171,6 +174,153 @@ export function AlertsPage() {
         </div>
       </motion.section>
     </motion.div>
+  );
+}
+
+/**
+ * Rule configuration (doc 03 §Alerts).
+ *
+ * Enable/disable only. The predicates stay in code because each exists twice
+ * — once as SQL for Neon, once as Node for the sheet path — and a
+ * user-authored predicate would be neither testable nor safe to run against
+ * the database.
+ */
+function RuleConfiguration({ onChanged }: { onChanged: () => void }) {
+  const [rules, setRules] = useState<AlertRuleSetting[] | null>(null);
+  const [editKey, setEditKey] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    api
+      .getAlertRules()
+      .then((result) => setRules(result.rules))
+      .catch(() => setRules([]));
+  }, []);
+
+  const toggle = async (rule: AlertRuleSetting) => {
+    if (!editKey) {
+      setNotice("Enter the edit key — switching a rule off hides containers.");
+      return;
+    }
+    setBusy(rule.ruleId);
+    setNotice(null);
+    try {
+      await api.setAlertRuleEnabled(rule.ruleId, !rule.enabled, editKey);
+      setRules((current) =>
+        current?.map((r) => (r.ruleId === rule.ruleId ? { ...r, enabled: !r.enabled } : r)) ?? null,
+      );
+      onChanged();
+    } catch (err) {
+      setNotice((err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!rules || rules.length === 0) return null;
+
+  return (
+    <motion.section variants={rise} className="card p-[var(--spacing-card)]">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 text-left"
+      >
+        <SlidersHorizontal size={15} className="text-[var(--color-text-secondary)]" aria-hidden />
+        <span className="text-[0.9rem] font-semibold text-[var(--color-text-primary)]">
+          Rule configuration
+        </span>
+        <span className="text-[0.72rem] text-[var(--color-text-secondary)]">
+          {rules.filter((r) => r.enabled && r.measurable).length} of{" "}
+          {rules.filter((r) => r.measurable).length} active
+        </span>
+        <ChevronDown
+          size={15}
+          aria-hidden
+          className={clsx(
+            "ml-auto text-[var(--color-text-secondary)] transition-transform",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-[var(--color-border)] pt-3">
+              <label htmlFor="rule-edit-key" className="text-[0.78rem] text-[var(--color-text-primary)]">
+                Edit key
+              </label>
+              <input
+                id="rule-edit-key"
+                type="password"
+                inputMode="numeric"
+                value={editKey}
+                onChange={(event) => setEditKey(event.target.value)}
+                placeholder="••••"
+                className="w-24 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-center text-[0.82rem] tracking-[0.3em] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)]"
+              />
+              {notice && (
+                <span className="text-[0.74rem] font-medium text-[var(--color-accent)]">{notice}</span>
+              )}
+            </div>
+
+            <ul className="mt-3 flex flex-col gap-2">
+              {rules.map((rule) => (
+                <li
+                  key={rule.ruleId}
+                  className="flex items-start gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2.5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[0.8rem] font-medium text-[var(--color-text-primary)]">
+                      {rule.label}
+                    </p>
+                    <p className="text-[0.72rem] text-[var(--color-text-secondary)]">
+                      {rule.measurable ? rule.description : rule.unmeasurableReason}
+                    </p>
+                  </div>
+
+                  {rule.measurable ? (
+                    <button
+                      onClick={() => toggle(rule)}
+                      disabled={busy === rule.ruleId}
+                      role="switch"
+                      aria-checked={rule.enabled}
+                      aria-label={`${rule.enabled ? "Disable" : "Enable"} ${rule.label}`}
+                      className={clsx(
+                        "relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50",
+                        rule.enabled
+                          ? "bg-[var(--color-primary)]"
+                          : "bg-[var(--color-surface-sunk)] border border-[var(--color-border-strong)]",
+                      )}
+                    >
+                      <span
+                        className={clsx(
+                          "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all",
+                          rule.enabled ? "left-[1.15rem]" : "left-0.5",
+                        )}
+                      />
+                    </button>
+                  ) : (
+                    <span className="shrink-0 rounded-full bg-[var(--color-surface-sunk)] px-2.5 py-1 text-[0.66rem] text-[var(--color-text-disabled)]">
+                      not measurable
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.section>
   );
 }
 

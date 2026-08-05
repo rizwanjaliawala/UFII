@@ -15,6 +15,7 @@ import {
 import clsx from "clsx";
 import { formatContainerNumber, formatDateShort, formatRelative } from "@tms/shared";
 import { api, type DashboardSummary } from "../services/api";
+import { RecentActivity } from "../features/dashboard/RecentActivity";
 
 /**
  * Dashboard — the operations command centre (doc 03).
@@ -73,12 +74,34 @@ export function DashboardPage() {
           </h1>
           <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[var(--text-body)] text-[var(--color-text-secondary)]">
             <Database size={13} aria-hidden />
-            {data.source.containers.toLocaleString("en-US")} containers from{" "}
+            {/* Two figures, because they legitimately differ. The store is
+                cumulative: containers drop out of the monthly tabs over time
+                and are kept here deliberately. One number alone would either
+                overstate the live fleet or imply history had been lost. */}
             <span className="font-medium text-[var(--color-text-primary)]">
-              {data.source.kind === "neon" ? "the database" : "the source sheets"}
-            </span>
-            {data.source.loadedAt && <>· loaded {formatRelative(data.source.loadedAt)}</>}
+              {data.source.containers.toLocaleString("en-US")}
+            </span>{" "}
+            containers stored
+            {data.source.sourceContainers !== null && (
+              <>
+                {" · "}
+                <span className="font-medium text-[var(--color-text-primary)]">
+                  {data.source.sourceContainers.toLocaleString("en-US")}
+                </span>{" "}
+                in the source at last sync
+              </>
+            )}
+            {data.source.lastSyncAt && <> · synced {formatRelative(data.source.lastSyncAt)}</>}
           </p>
+          {data.source.cumulative && data.source.sourceContainers !== null &&
+            data.source.containers > data.source.sourceContainers && (
+              <p className="mt-1 text-[0.72rem] text-[var(--color-text-secondary)]">
+                Historical repository —{" "}
+                {(data.source.containers - data.source.sourceContainers).toLocaleString("en-US")}{" "}
+                containers are retained from earlier syncs and no longer appear in
+                the source sheets. Nothing is ever deleted.
+              </p>
+            )}
         </div>
         <button
           onClick={load}
@@ -245,6 +268,10 @@ export function DashboardPage() {
         <Breakdown title="By terminal" rows={data.byTerminal} icon={Boxes} />
         <Breakdown title="By port of discharge" rows={data.byPod} icon={Ship} />
       </div>
+
+      <motion.div variants={rise}>
+        <RecentActivity />
+      </motion.div>
 
       {/* ---- Appointments ---- */}
       <motion.section variants={rise} className="card p-[var(--spacing-card)]">

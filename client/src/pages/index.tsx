@@ -21,6 +21,7 @@ export { VendorsPage } from "./VendorsPage";
 export { PuLfdPage } from "./PuLfdPage";
 export { AlertsPage } from "./AlertsPage";
 export { DetentionPage } from "./DetentionPage";
+export { EmailReviewPage } from "./EmailReviewPage";
 
 export const CostAnalysisPage = () => (
   <ModulePlaceholder

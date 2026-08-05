@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -11,6 +11,10 @@ import {
   X,
 } from "lucide-react";
 import clsx from "clsx";
+import { EmailIntelligence } from "./EmailIntelligence";
+import { ContainerVendorPanel } from "./ContainerVendorPanel";
+import { ContainerActivityLog } from "./ContainerActivityLog";
+import { QuickActions } from "./QuickActions";
 import {
   CONTAINER_LIFECYCLE,
   formatContainerNumber,
@@ -106,13 +110,52 @@ export function Container360Drawer({
     };
   }, [containerNumber]);
 
-  // Esc closes from anywhere — operators live on the keyboard.
+  const [copied, setCopied] = useState(false);
+
+  const copyNumber = useCallback(() => {
+    if (!container) return;
+    void navigator.clipboard.writeText(container.containerNumber).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [container]);
+
+  /**
+   * Keyboard shortcuts (doc 04 §Keyboard Shortcuts). Operators live on the
+   * keyboard, and a container number is something they copy constantly.
+   *
+   * Ignored while focus is in a field, or `e` would open the edit dialog
+   * every time somebody typed the letter into the notes box.
+   */
   useEffect(() => {
     if (!containerNumber) return;
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable === true;
+
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (typing || event.ctrlKey || event.metaKey || event.altKey) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "e") {
+        event.preventDefault();
+        setEditing(true);
+      } else if (key === "c") {
+        event.preventDefault();
+        copyNumber();
+      }
+    };
+
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [containerNumber, onClose]);
+  }, [containerNumber, onClose, copyNumber]);
 
   const risk = container ? lfdRisk(container) : "safe";
   const banner = RISK_BANNER[risk];
@@ -246,12 +289,21 @@ export function Container360Drawer({
                     />
                   </Section>
 
-                  <Section title="Email Intelligence">
-                    <PendingNotice
-                      icon={Mail}
-                      message="Conversation history and AI summaries for this container."
-                      phase="Phase 3"
+                  <Section title="Quick Actions">
+                    <QuickActions
+                      container={container}
+                      copied={copied}
+                      onCopy={copyNumber}
+                      onEdit={() => setEditing(true)}
                     />
+                  </Section>
+
+                  <Section title="Vendor">
+                    <ContainerVendorPanel trucker={container.trucker} />
+                  </Section>
+
+                  <Section title="Email Intelligence">
+                    <EmailIntelligence containerNumber={container.containerNumber} />
                   </Section>
 
                   <Section title="Invoices & Cost">
@@ -289,6 +341,10 @@ export function Container360Drawer({
                       </ul>
                     </Section>
                   )}
+
+                  <Section title="Activity Log">
+                    <ContainerActivityLog containerNumber={container.containerNumber} />
+                  </Section>
 
                   <Section title="Provenance">
                     <p className="flex items-center gap-2 text-[0.74rem] text-[var(--color-text-secondary)]">

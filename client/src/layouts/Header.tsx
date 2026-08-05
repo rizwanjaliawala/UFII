@@ -1,4 +1,5 @@
-import { Bell, HelpCircle, RefreshCw, Search, Sparkles, User } from "lucide-react";
+import { HelpCircle, RefreshCw, Search, Sparkles, User } from "lucide-react";
+import { NotificationBell } from "./NotificationBell";
 import { motion } from "framer-motion";
 import clsx from "clsx";
 
@@ -58,7 +59,9 @@ export function Header({
         </button>
 
         <IconButton label="AI Assistant" icon={Sparkles} />
-        <IconButton label="Notifications" icon={Bell} badge={0} />
+        {/* Live, from the alert rules — the old placeholder always read 0,
+            which is a claim, not a placeholder. */}
+        <NotificationBell />
         <IconButton label="Help" icon={HelpCircle} />
 
         <button
@@ -80,7 +83,7 @@ function IconButton({
   badge,
 }: {
   label: string;
-  icon: typeof Bell;
+  icon: typeof HelpCircle;
   badge?: number;
 }) {
   return (

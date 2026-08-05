@@ -10,6 +10,9 @@ import { vendorsRouter } from "./routes/vendors.js";
 import { alertsRouter } from "./routes/alerts.js";
 import { searchRouter } from "./routes/search.js";
 import { detentionRouter } from "./routes/detention.js";
+import { agentRouter } from "./routes/agent.js";
+import { emailsRouter } from "./routes/emails.js";
+import { activityRouter } from "./routes/activity.js";
 import { editGateStatus } from "./middleware/editGate.js";
 
 /**
@@ -47,6 +50,9 @@ export function createApp(): express.Express {
   app.use("/api/alerts", alertsRouter);
   app.use("/api/search", searchRouter);
   app.use("/api/detention", detentionRouter);
+  app.use("/api/agent", agentRouter);
+  app.use("/api/emails", emailsRouter);
+  app.use("/api/activity", activityRouter);
 
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "Not found" });

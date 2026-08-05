@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { AppFooter } from "./AppFooter";
+import { SyncDialog } from "../features/sync/SyncDialog";
 
 /**
  * Application shell: fixed sidebar + sticky header + scrolling content.
@@ -14,14 +15,23 @@ import { AppFooter } from "./AppFooter";
  */
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    // Phase 3 wires this to the compact synchronization overlay and the
-    // real sync pipeline. Deliberately not the full startup screen.
-    setTimeout(() => setRefreshing(false), 600);
-  };
+  /**
+   * Opens the sync dialog rather than pretending to refresh.
+   *
+   * This used to spin for 600ms and do nothing at all, which is why data
+   * never changed on "Refresh Data". Newer data only arrives via the ingest,
+   * which writes and therefore needs the edit key.
+   */
+  const handleRefresh = () => setSyncOpen(true);
+
+  /**
+   * The header's search box is a button, and the command palette owns its own
+   * open state so Ctrl+K works globally. A window event connects the two
+   * without threading state through the whole shell.
+   */
+  const handleOpenSearch = () => window.dispatchEvent(new CustomEvent("tms:open-search"));
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-[var(--color-background)]">
@@ -42,10 +52,8 @@ export function AppLayout() {
         >
           <Header
             onRefresh={handleRefresh}
-            refreshing={refreshing}
-            onOpenSearch={() => {
-              /* Global search dialog — Phase 2 */
-            }}
+            refreshing={syncOpen}
+            onOpenSearch={handleOpenSearch}
           />
         </motion.div>
 
@@ -56,6 +64,7 @@ export function AppLayout() {
             <Outlet />
           </div>
           <AppFooter />
+          <SyncDialog open={syncOpen} onClose={() => setSyncOpen(false)} />
         </main>
       </div>
     </div>

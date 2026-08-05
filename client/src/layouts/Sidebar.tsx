@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import {
   Banknote,
   Bell,
+  MailQuestion,
   Boxes,
   ChevronLeft,
   FileText,
@@ -45,6 +46,7 @@ const NAV: NavItem[] = [
   { to: "/vendors", label: "Vendor Management", icon: Truck },
   { to: "/reports", label: "Reports", icon: FileText },
   { to: "/alerts", label: "Alerts & Reminders", icon: Bell },
+  { to: "/email-review", label: "Email Review", icon: MailQuestion },
   { to: "/ai", label: "AI Assistant", icon: Sparkles },
   { to: "/sync", label: "Synchronization", icon: RefreshCw },
   { to: "/administration", label: "Administration", icon: ShieldCheck },

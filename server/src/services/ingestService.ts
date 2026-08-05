@@ -33,6 +33,19 @@ export interface IngestResult {
   tabsRead: number;
   rowsRead: number;
   containersUpserted: number;
+  /** New containers this sync had never seen before. */
+  containersInserted: number;
+  /** Containers already held, refreshed with the latest source values. */
+  containersUpdated: number;
+  /**
+   * Every container ever ingested, after this run.
+   *
+   * Deliberately distinct from `containersUpserted`: the store is cumulative,
+   * so the total is normally LARGER than what the source currently holds, and
+   * conflating the two would make the fleet look like it had shrunk whenever
+   * a monthly tab rolled over.
+   */
+  containersTotal: number;
   invoicesUpserted: number;
   linesUpserted: number;
   creditNotes: number;
@@ -76,14 +89,34 @@ const INGESTED_COLUMNS = [
   "source_sheet",
 ] as const;
 
-async function upsertContainers(containers: Container[]): Promise<number> {
-  if (containers.length === 0) return 0;
+/**
+ * Containers are inserted or updated, and NEVER removed.
+ *
+ * The database is a cumulative historical store, not a mirror of the source
+ * sheets. A container that disappears from a monthly tab has not stopped
+ * existing — the tab has simply moved on — and its shipment history stays
+ * valid. So there is deliberately no delete, no archive flag and no
+ * reconciliation pass here. Anything ever ingested is kept.
+ *
+ * Counting inserts separately from updates uses Postgres' `xmax`: on a row
+ * returned by INSERT ... ON CONFLICT, `xmax = 0` means the row was newly
+ * inserted, and a non-zero value means an existing row was updated. It is the
+ * only way to tell the two apart without a second round trip per row.
+ */
+export interface UpsertCounts {
+  inserted: number;
+  updated: number;
+}
+
+async function upsertContainers(containers: Container[]): Promise<UpsertCounts> {
+  if (containers.length === 0) return { inserted: 0, updated: 0 };
 
   const updateClause = INGESTED_COLUMNS.map((c) => `${c} = EXCLUDED.${c}`).join(",\n      ");
 
   // Batched to keep each statement well inside Postgres' parameter limit.
   const BATCH = 250;
-  let upserted = 0;
+  let inserted = 0;
+  let updated = 0;
 
   for (let start = 0; start < containers.length; start += BATCH) {
     const batch = containers.slice(start, start + BATCH);
@@ -129,7 +162,7 @@ async function upsertContainers(containers: Container[]): Promise<number> {
       );
     });
 
-    const result = await query(
+    const result = await query<{ was_inserted: boolean }>(
       `INSERT INTO containers (
         container_number, bl_number, pod, terminal, ssl, fc, isa,
         trucker, trucker_key, eta, last_free_day, appointment_date,
@@ -138,16 +171,21 @@ async function upsertContainers(containers: Container[]): Promise<number> {
         rejection_reason, redirection_type, responsible_stakeholder,
         source_tab, source_sheet, last_synced_at
       ) VALUES ${tuples.join(",")}
+      -- returns was_inserted per row; see the note on upsertContainers
       ON CONFLICT (container_number) DO UPDATE SET
       ${updateClause},
-      last_synced_at = EXCLUDED.last_synced_at`,
+      last_synced_at = EXCLUDED.last_synced_at
+      RETURNING (xmax = 0) AS was_inserted`,
       values,
     );
 
-    upserted += result.rowCount ?? 0;
+    for (const row of result.rows) {
+      if (row.was_inserted) inserted++;
+      else updated++;
+    }
   }
 
-  return upserted;
+  return { inserted, updated };
 }
 
 /* ---------------- Sheet 2: invoices, credit notes, FBU ---------------- */
@@ -450,14 +488,25 @@ export async function runIngest(trigger = "Manual"): Promise<IngestResult> {
 
   try {
     const containers = await loadContainers(true);
-    const containersUpserted = await upsertContainers(containers);
+    const counts = await upsertContainers(containers);
     const sheet2 = await ingestSheet2();
+
+    // Read after the upsert: this is the cumulative total, the figure the
+    // dashboard reports as the historical store.
+    const totals = await query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM containers`,
+    );
+    const containersTotal = Number(totals.rows[0]?.count ?? 0);
+    const containersUpserted = counts.inserted + counts.updated;
 
     const result: IngestResult = {
       runId,
       tabsRead: 14,
       rowsRead: containers.length + sheet2.rows,
       containersUpserted,
+      containersInserted: counts.inserted,
+      containersUpdated: counts.updated,
+      containersTotal,
       invoicesUpserted: sheet2.invoices,
       linesUpserted: sheet2.lines,
       creditNotes: sheet2.credits,
@@ -468,9 +517,18 @@ export async function runIngest(trigger = "Manual"): Promise<IngestResult> {
 
     await query(
       `UPDATE sync_runs SET finished_at = NOW(), status = 'Success',
-         rows_read = $2, containers_upserted = $3, invoices_upserted = $4
+         rows_read = $2, containers_upserted = $3, invoices_upserted = $4,
+         containers_inserted = $5, containers_updated = $6, containers_total = $7
        WHERE id = $1`,
-      [runId, result.rowsRead, containersUpserted, sheet2.invoices],
+      [
+        runId,
+        result.rowsRead,
+        containersUpserted,
+        sheet2.invoices,
+        counts.inserted,
+        counts.updated,
+        containersTotal,
+      ],
     );
 
     syncLogger.info(result, "ingest complete");
